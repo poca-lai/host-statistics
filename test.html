@@ -158,21 +158,20 @@ document.getElementById('processButton').addEventListener('click', () => {
         return;
     }
 
-    // 簡繁統一轉繁體（OpenCC-js cn2t）
-    if (typeof OpenCC !== 'undefined' && OpenCC.cn2t) {
+    // 簡繁統一轉繁體（OpenCC-js）
+    if (typeof OpenCC !== 'undefined') {
         try {
-            const convertedText = OpenCC.cn2t(text);
-            const stats = extractInfo(convertedText);
-            document.getElementById('output').textContent = formatOutput(stats);
-        } catch(e) {
-            const stats = extractInfo(text);
-            document.getElementById('output').textContent = formatOutput(stats);
+            const converter = OpenCC.Converter({ from: 'cn', to: 't' });
+            text = converter(text); // 先轉換成繁體
+        } catch (e) {
+            console.warn("OpenCC 轉換失敗，直接使用原文。", e);
         }
-    } else {
-        const stats = extractInfo(text);
-        document.getElementById('output').textContent = formatOutput(stats);
     }
-});
+
+    const stats = extractInfo(text);
+    document.getElementById('output').textContent = formatOutput(stats);
+
+    });
 </script>
 </body>
 </html>
