@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>主持統計工具</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { font-family: Arial, sans-serif; padding: 20px; }
+textarea { width: 100%; height: 200px; font-size: 14px; }
+button { margin-top: 10px; padding: 10px 20px; font-size: 16px; }
+#output { width: 100%; height: 300px; font-size: 14px; white-space: pre-wrap; margin-top: 10px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; }
+</style>
+</head>
+<body>
+
+<h2>主持統計工具</h2>
+<label for="inputText">請輸入文本：</label>
+<textarea id="inputText" placeholder="貼上你的主持文本"></textarea>
+<br>
+<button id="processButton">統計</button>
+
+<h3>統計結果：</h3>
+<div id="output">結果將顯示在這裡</div>
+
+<!-- 載入 OpenCC-js -->
+<script src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/cn2t.min.js"></script>
+
+<script>
+// 名稱順序
+const NAME_ORDER = [
+    "恩在","遺忘","螢螢","阿俊","沐希","伊諾","媃媃","天天","菲婷","煙酒","拾壹","豬皮","雪魂",
+    "慕語","肚肚","愛睏","雨滴","阿夜","暖歌","紫","羊毛","宋炫","地獄池","莎莎","小睏羊",
+    "月兒","2咩","Je","神秘人","豚寶寶","續寫","乖寶","榛榛","Ro","球球","大熊","阡先生","南潯","33"
+];
+
+function removeEmoji(text) {
+    return text.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '');
+}
+
+function normalizeName(name) {
+    name = name.replace(/[波卡:]/g, '')
+               .replace(/[0.2]/g, '') 
+               .replace(/[- ]/g, '')
+               .replace(/[困睏]/g, '睏')
+               .replace(/[瑩營莹]/g, '螢')
+               .replace(/^紫心$/, '紫')
+               .replace(/[可狼可奶]/g, '神秘人')
+               .replace(/^阡阡$/, '阡先生')
+               .replace(/＊/g, '*')
+               .replace(/^俊俊$/, '阿俊')
+               .replace(/\*/g, '');
+    return name;
+}
+
+function extractCountAndAdd(stats, info) {
+    info = info.trim();
+    if (!info) return;
+    let name, count;
+    if (info.includes('*')) {
+        [name, count] = info.split('*');
+        name = normalizeName(name);
+        stats[name] = (stats[name] || 0) + parseFloat(count.trim());
+    } else {
+        const match = info.match(/(\D*)(\d+(\.\d+)?)/);
+        if (match) {
+            name = normalizeName(match[1].trim());
+            count = parseFloat(match[2].trim());
+            stats[name] = (stats[name] || 0) + count;
+        }
+    }
+}
+
+function sortByName(stats) {
+    const sorted = {};
+    NAME_ORDER.forEach(name => {
+        if (stats[name] !== undefined) sorted[name] = stats[name];
+    });
+    Object.keys(stats).forEach(name => {
+        if (!NAME_ORDER.includes(name)) sorted[name] = stats[name];
+    });
+    return sorted;
+}
+
+function formatOutput(stats) {
+    let output = '';
+    for (const [category, stat] of Object.entries(stats)) {
+        output += category + '統計：\n';
+        const sortedStat = sortByName(stat);
+        for (const [name, count] of Object.entries(sortedStat)) {
+            output += `${name}: ${count} 次\n`;
+        }
+        output += '\n';
+    }
+    return output;
+}
+
+function extractInfo(text) {
+    const hostStats = {};
+    const memberStats = {};
+    const interactionStats = {};
+    const downlightStats = {};
+    const highlightStats = {};
+    const findlightStats = {};
+    const fullStats = {};
+
+    const hostPattern = /- 主持：([^\n]+)/g;
+    const timePattern = /- 主持(?:時間|Time|时间)：(\d+)-(\d+)/g;
+    const memberPattern = /排[档|檔]成[员|員]：\n([^：]+(?:\n[^\n]+)*)/g;
+    const interactionPattern = /- 互動：\n([^：]+(?:\n[^\n]+)*)/g;
+    const downlightPattern = /- 下光：\n([^：]+(?:\n[^\n]+)*)/g;
+    const highlightPattern = /- 收光：\n([^：]+(?:\n[^\n]+)*)/g;
+    const findlightPattern = /- 找光：\n([^：]+(?:\n[^\n]+)*)/g;
+    const fullPattern = /- 备注：\n([^：]+(?:\n[^\n]+)*)/g;
+
+    const segments = text.split(/(?=日期：\d{4}年\d{1,2}月\d{1,2}日)/);
+
+    segments.forEach(segment => {
+        const hosts = Array.from(segment.matchAll(hostPattern)).map(m => normalizeName(m[1]));
+        const times = Array.from(segment.matchAll(timePattern)).map(m => [parseInt(m[1],10), parseInt(m[2],10)]);
+
+        hosts.forEach((host, i) => {
+            let start = 0, end = 0;
+            if (times[i]) { start = times[i][0]; end = times[i][1]; } 
+            else { end = start + 2; }
+            let hours = end - start; if (hours < 0) hours += 24;
+            hostStats[host] = (hostStats[host] || 0) + hours;
+        });
+
+        Array.from(segment.matchAll(memberPattern)).forEach(m => m[1].split('\n').forEach(line => extractCountAndAdd(memberStats, line)));
+        Array.from(segment.matchAll(interactionPattern)).forEach(m => m[1].split('\n').forEach(line => extractCountAndAdd(interactionStats, line)));
+        Array.from(segment.matchAll(downlightPattern)).forEach(m => m[1].split('\n').forEach(line => extractCountAndAdd(downlightStats, line)));
+        Array.from(segment.matchAll(highlightPattern)).forEach(m => m[1].split('\n').forEach(line => extractCountAndAdd(highlightStats, line)));
+        Array.from(segment.matchAll(findlightPattern)).forEach(m => m[1].split('\n').forEach(line => extractCountAndAdd(findlightStats, line)));
+        Array.from(segment.matchAll(fullPattern)).forEach(m => m[1].split('\n').forEach(line => {
+            const fullMatch = line.match(/(全[麥麦]|全麥互動)(?:\*(\d+))?/);
+            if(fullMatch){
+                const count = fullMatch[2] ? parseInt(fullMatch[2],10) : 1;
+                hosts.forEach(h => { fullStats[h] = (fullStats[h] || 0) + count; });
+            }
+        }));
+    });
+
+    return {
+        '主持': hostStats,
+        '排檔': memberStats,
+        '互動': interactionStats,
+        '全麥': fullStats,
+        '收光': highlightStats,
+        '找光': findlightStats,
+        '下光': downlightStats
+    };
+}
+
+document.getElementById('processButton').addEventListener('click', () => {
+    let text = removeEmoji(document.getElementById('inputText').value);
+    if (!text.trim()) {
+        document.getElementById('output').textContent = '請輸入一些文本進行統計。';
+        return;
+    }
+
+    // 簡繁統一轉繁體（OpenCC-js cn2t）
+    if (typeof OpenCC !== 'undefined' && OpenCC.cn2t) {
+        try {
+            const convertedText = OpenCC.cn2t(text);
+            const stats = extractInfo(convertedText);
+            document.getElementById('output').textContent = formatOutput(stats);
+        } catch(e) {
+            const stats = extractInfo(text);
+            document.getElementById('output').textContent = formatOutput(stats);
+        }
+    } else {
+        const stats = extractInfo(text);
+        document.getElementById('output').textContent = formatOutput(stats);
+    }
+});
+</script>
+</body>
+</html>
