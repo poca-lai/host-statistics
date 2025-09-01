@@ -3,47 +3,37 @@
 <head>
 <meta charset="UTF-8">
 <title>主持統計工具</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 body { font-family: Arial, sans-serif; padding: 20px; }
-textarea { width: 100%; height: 250px; font-size: 14px; }
-table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-th, td { border: 1px solid #ccc; padding: 6px; text-align: left; vertical-align: top; white-space: pre-line; }
-th { background-color: #f4f4f4; }
-button { padding: 8px 16px; margin-top: 10px; font-size: 14px; }
+textarea { width: 100%; height: 200px; font-size: 14px; }
+button { margin-top: 10px; padding: 10px 20px; font-size: 16px; }
+#output { width: 100%; font-size: 14px; margin-top: 10px; overflow-x: auto; }
+#output table {
+    border-collapse: collapse;
+    width: 100%;
+}
+#output th, #output td {
+    border: 1px solid #ccc;
+    padding: 5px 10px;
+    text-align: left;
+    vertical-align: top;
+}
+#output th {
+    background-color: #f4f4f4;
+}
 </style>
 </head>
 <body>
 
 <h2>主持統計工具</h2>
-<textarea id="inputText" placeholder="請貼入主持記錄文本"></textarea>
+<label for="inputText">請輸入文本：</label>
+<textarea id="inputText" placeholder="貼上你的主持文本"></textarea>
 <br>
 <button id="processButton">統計</button>
-<br>
-<button id="copyButton">複製結果</button>
-<table>
-  <thead>
-    <tr>
-      <th>主持統計</th>
-      <th>排檔統計</th>
-      <th>互動統計</th>
-      <th>全麥統計</th>
-      <th>收光統計</th>
-      <th>找光統計</th>
-      <th>下光統計</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td id="hostStats"></td>
-      <td id="memberStats"></td>
-      <td id="interactionStats"></td>
-      <td id="fullStats"></td>
-      <td id="highlightStats"></td>
-      <td id="findlightStats"></td>
-      <td id="downlightStats"></td>
-    </tr>
-  </tbody>
-</table>
+<button id="copyButton">複製表格</button>
+<h3>統計結果：</h3>
+<div id="output">結果將顯示在這裡</div>
 
 <!-- 載入 OpenCC-js -->
 <script src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/cn2t.min.js"></script>
@@ -104,10 +94,35 @@ function sortByName(stats) {
     return sorted;
 }
 
-function formatCategory(stat) {
-    if (!stat || Object.keys(stat).length === 0) return '';
-    const sorted = sortByName(stat);
-    return Object.entries(sorted).map(([name, count]) => `${name}: ${count} 次`).join('\n');
+function formatOutput(stats) {
+    let output = '<table><tr>';
+    // 先建立欄位標題
+    for (const category of Object.keys(stats)) {
+        output += `<th>${category}統計</th>`;
+    }
+    output += '</tr><tr>';
+    
+    // 先算每個類別的最大行數
+    const maxRows = Math.max(...Object.values(stats).map(s => Object.keys(s).length));
+
+    // 生成每一行
+    for (let i = 0; i < maxRows; i++) {
+        for (const category of Object.keys(stats)) {
+            const sortedStat = sortByName(stats[category]);
+            const names = Object.keys(sortedStat);
+            const counts = Object.values(sortedStat);
+            if (i < names.length) {
+                output += `<td>${names[i]}: ${counts[i]} 次</td>`;
+            } else {
+                output += '<td></td>';
+            }
+        }
+        output += '</tr>';
+        if (i < maxRows - 1) output += '<tr>';
+    }
+
+    output += '</table>';
+    return output;
 }
 
 function extractInfo(text) {
@@ -119,14 +134,14 @@ function extractInfo(text) {
     const findlightStats = {};
     const fullStats = {};
 
-    const hostPattern = /- 主持：([^\n]+)/g;
-    const timePattern = /- 主持(?:時間|Time|时间)：(\d+)-(\d+)/g;
-    const memberPattern = /排[档檔]成[员員]：\n([^：]+(?:\n[^\n]+)*)/g;
-    const interactionPattern = /- 互動：\n([^：]+(?:\n[^\n]+)*)/g;
-    const downlightPattern = /- 下光：\n([^：]+(?:\n[^\n]+)*)/g;
-    const highlightPattern = /- 收光：\n([^：]+(?:\n[^\n]+)*)/g;
-    const findlightPattern = /- 找光：\n([^：]+(?:\n[^\n]+)*)/g;
-    const fullPattern = /- 备注：\n([^：]+(?:\n[^\n]+)*)/g;
+    const hostPattern = /- *主持：([^\n]+)/g;
+    const timePattern = /- *主持(?:時間|Time|时间)：(\d+)-(\d+)/g;
+    const memberPattern = /排[档|檔]成[员|員]：\n([^：]+(?:\n[^\n]+)*)/g;
+    const interactionPattern = /- *互動：\n([^：]+(?:\n[^\n]+)*)/g;
+    const downlightPattern = /- *下光：\n([^：]+(?:\n[^\n]+)*)/g;
+    const highlightPattern = /- *收光：\n([^：]+(?:\n[^\n]+)*)/g;
+    const findlightPattern = /- *找光：\n([^：]+(?:\n[^\n]+)*)/g;
+    const fullPattern = /- *备注：\n([^：]+(?:\n[^\n]+)*)/g;
 
     const segments = text.split(/(?=日期：\d{4}年\d{1,2}月\d{1,2}日)/);
 
@@ -169,52 +184,51 @@ function extractInfo(text) {
 
 document.getElementById('processButton').addEventListener('click', () => {
     let text = removeEmoji(document.getElementById('inputText').value);
-    if (!text.trim()) return;
-
-    // 簡繁統一轉繁體（OpenCC-js）
-    if (typeof OpenCC !== 'undefined') {
-        try {
-            const converter = OpenCC.Converter({ from: 'cn', to: 't' });
-            text = converter(text);
-        } catch (e) {
-            console.warn("OpenCC 轉換失敗，直接使用原文。", e);
-        }
+    if (!text.trim()) {
+        document.getElementById('output').innerHTML = '請輸入一些文本進行統計。';
+        return;
     }
 
-    const stats = extractInfo(text);
-    document.getElementById('hostStats').textContent = formatCategory(stats['主持']);
-    document.getElementById('memberStats').textContent = formatCategory(stats['排檔']);
-    document.getElementById('interactionStats').textContent = formatCategory(stats['互動']);
-    document.getElementById('fullStats').textContent = formatCategory(stats['全麥']);
-    document.getElementById('highlightStats').textContent = formatCategory(stats['收光']);
-    document.getElementById('findlightStats').textContent = formatCategory(stats['找光']);
-    document.getElementById('downlightStats').textContent = formatCategory(stats['下光']);
+    if (typeof OpenCC !== 'undefined' && OpenCC.cn2t) {
+        try {
+            const converter = OpenCC.cn2t(); 
+            converter.convert(text).then(convertedText => {
+                const stats = extractInfo(convertedText);
+                document.getElementById('output').innerHTML = formatOutput(stats);
+            }).catch(err => {
+                console.error(err);
+                const stats = extractInfo(text);
+                document.getElementById('output').innerHTML = formatOutput(stats);
+            });
+        } catch(e) {
+            console.error(e);
+            const stats = extractInfo(text);
+            document.getElementById('output').innerHTML = formatOutput(stats);
+        }
+    } else {
+        const stats = extractInfo(text);
+        document.getElementById('output').innerHTML = formatOutput(stats);
+    }
 });
 document.getElementById('copyButton').addEventListener('click', () => {
-    const host = document.getElementById('hostStats').textContent;
-    const member = document.getElementById('memberStats').textContent;
-    const interaction = document.getElementById('interactionStats').textContent;
-    const full = document.getElementById('fullStats').textContent;
-    const highlight = document.getElementById('highlightStats').textContent;
-    const findlight = document.getElementById('findlightStats').textContent;
-    const downlight = document.getElementById('downlightStats').textContent;
-
-    // 分行為陣列，取最大行數，方便對齊
-    const cols = [host, member, interaction, full, highlight, findlight, downlight].map(col => col.split('\n'));
-    const maxRows = Math.max(...cols.map(c => c.length));
-
-    let output = '';
-    for (let i = 0; i < maxRows; i++) {
-        const row = cols.map(c => c[i] || '').join('\t'); // 用 tab 分隔欄位
-        output += row + '\n';
+    const table = document.getElementById('output').querySelector('table');
+    if (!table) {
+        alert('沒有可複製的表格！');
+        return;
     }
 
-    // 複製到剪貼簿
-    navigator.clipboard.writeText(output).then(() => {
-        alert('結果已複製，可以直接貼到 Excel！');
-    }).catch(err => {
-        alert('複製失敗：' + err);
-    });
+    // 建立一個臨時 <textarea> 來複製表格文字
+    const temp = document.createElement('textarea');
+    temp.value = table.innerText; // 取文字內容
+    document.body.appendChild(temp);
+    temp.select();
+    try {
+        document.execCommand('copy');
+        alert('表格已複製到剪貼簿！');
+    } catch (err) {
+        alert('複製失敗，請手動複製。');
+    }
+    document.body.removeChild(temp);
 });
 </script>
 </body>
