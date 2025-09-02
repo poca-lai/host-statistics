@@ -35,8 +35,8 @@ button { margin-top: 10px; padding: 10px 20px; font-size: 16px; }
 <h3>統計結果：</h3>
 <div id="output">結果將顯示在這裡</div>
 
-<!-- 載入 OpenCC-js -->
-<script src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/cn2t.min.js"></script>
+<!-- 改用完整版 OpenCC-js -->
+<script src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/full.js"></script>
 
 <script>
 // 名稱順序
@@ -61,7 +61,10 @@ function normalizeName(name) {
                .replace(/^阡阡$/, '阡先生')
                .replace(/＊/g, '*')
                .replace(/^俊俊$/, '阿俊')
-               .replace(/\*/g, '');
+               .replace(/\*/g, '')
+               
+               .replace(/麦/g, "麥");
+
     return name;
 }
 
@@ -96,16 +99,14 @@ function sortByName(stats) {
 
 function formatOutput(stats) {
     let output = '<table><tr>';
-    // 先建立欄位標題
+    // 欄位標題
     for (const category of Object.keys(stats)) {
         output += `<th>${category}統計</th>`;
     }
     output += '</tr><tr>';
     
-    // 先算每個類別的最大行數
     const maxRows = Math.max(...Object.values(stats).map(s => Object.keys(s).length));
 
-    // 生成每一行
     for (let i = 0; i < maxRows; i++) {
         for (const category of Object.keys(stats)) {
             const sortedStat = sortByName(stats[category]);
@@ -141,7 +142,7 @@ function extractInfo(text) {
     const downlightPattern = /- *下光：\n([^：]+(?:\n[^\n]+)*)/g;
     const highlightPattern = /- *收光：\n([^：]+(?:\n[^\n]+)*)/g;
     const findlightPattern = /- *找光：\n([^：]+(?:\n[^\n]+)*)/g;
-    const fullPattern = /- *备注：\n([^：]+(?:\n[^\n]+)*)/g;
+    const fullPattern = /- *(备注|備註)：([\s\S]*?)(?=\n- |$)/g;
 
     const segments = text.split(/(?=日期：\d{4}年\d{1,2}月\d{1,2}日)/);
 
@@ -162,13 +163,26 @@ function extractInfo(text) {
         Array.from(segment.matchAll(downlightPattern)).forEach(m => m[1].split('\n').forEach(line => extractCountAndAdd(downlightStats, line)));
         Array.from(segment.matchAll(highlightPattern)).forEach(m => m[1].split('\n').forEach(line => extractCountAndAdd(highlightStats, line)));
         Array.from(segment.matchAll(findlightPattern)).forEach(m => m[1].split('\n').forEach(line => extractCountAndAdd(findlightStats, line)));
-        Array.from(segment.matchAll(fullPattern)).forEach(m => m[1].split('\n').forEach(line => {
-            const fullMatch = line.match(/(全[麥麦]|全麥互動)(?:\*(\d+))?/);
-            if(fullMatch){
-                const count = fullMatch[2] ? parseInt(fullMatch[2],10) : 1;
-                hosts.forEach(h => { fullStats[h] = (fullStats[h] || 0) + count; });
-            }
-        }));
+Array.from(segment.matchAll(fullPattern)).forEach(m => {
+    console.log("找到備註區段：", m[2]); // ✅ 這裡改成 m[2]
+
+    m[2].split('\n').forEach(line => {
+        console.log("檢查行：", line);
+
+        const fullMatch = line.match(/(全[麥麦]|全麥互動)(?:\*(\d+))?/);
+        console.log("正則比對結果：", fullMatch);
+
+        if(fullMatch){
+            const count = fullMatch[2] ? parseInt(fullMatch[2],10) : 1;
+            console.log("解析到的數量：", count);
+
+            hosts.forEach(h => { 
+                fullStats[h] = (fullStats[h] || 0) + count;
+                console.log(`累計到主持人 ${h}：`, fullStats[h]);
+            });
+        }
+    });
+});
     });
 
     return {
@@ -189,37 +203,22 @@ document.getElementById('processButton').addEventListener('click', () => {
         return;
     }
 
-    if (typeof OpenCC !== 'undefined' && OpenCC.cn2t) {
-        try {
-            const converter = OpenCC.cn2t(); 
-            converter.convert(text).then(convertedText => {
-                const stats = extractInfo(convertedText);
-                document.getElementById('output').innerHTML = formatOutput(stats);
-            }).catch(err => {
-                console.error(err);
-                const stats = extractInfo(text);
-                document.getElementById('output').innerHTML = formatOutput(stats);
-            });
-        } catch(e) {
-            console.error(e);
-            const stats = extractInfo(text);
-            document.getElementById('output').innerHTML = formatOutput(stats);
-        }
-    } else {
-        const stats = extractInfo(text);
-        document.getElementById('output').innerHTML = formatOutput(stats);
-    }
+    // ✅ 使用 OpenCC (簡體 → 繁體)
+    const converter = OpenCC.Converter({ from: 'cn', to: 'tw' });
+    const convertedText = converter(text);
+
+    const stats = extractInfo(convertedText);
+    document.getElementById('output').innerHTML = formatOutput(stats);
 });
+
 document.getElementById('copyButton').addEventListener('click', () => {
     const table = document.getElementById('output').querySelector('table');
     if (!table) {
         alert('沒有可複製的表格！');
         return;
     }
-
-    // 建立一個臨時 <textarea> 來複製表格文字
     const temp = document.createElement('textarea');
-    temp.value = table.innerText; // 取文字內容
+    temp.value = table.innerText;
     document.body.appendChild(temp);
     temp.select();
     try {
